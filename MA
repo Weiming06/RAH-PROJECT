@@ -1,0 +1,180 @@
+// Define pin numbers for input and output devices
+#define PIR_SENSOR_PIN 2
+#define BME_SENSOR_PIN 3
+#define DISTANCE_SENSOR_PIN A1 // Changed to an analog pin for distance sensor reading
+#define SERVO_PIN 6
+#define BUZZER_PIN 7
+#define OLED_SDA_PIN A4
+#define OLED_SCL_PIN A5
+#define RGB_LED_PIN_RED 8
+#define RGB_LED_PIN_GREEN 9
+#define RGB_LED_PIN_BLUE 10
+
+// Include necessary libraries
+#include <Wire.h> // For I2C communication
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#include <Servo.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_TCS34725.h>
+
+// Initialize objects for sensors and output devices
+Servo servoMotor;
+Adafruit_BME280 bme;
+Adafruit_SSD1306 display(-1);
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+
+// I2C address for the BME280 sensor
+#define BME280_ADDRESS 0x76
+
+void setup() {
+  // Initialize Serial communication
+  Serial.begin(9600);
+
+  // Initialize PIR Motion Sensor
+  pinMode(PIR_SENSOR_PIN, INPUT);
+
+  // Initialize BME280 Sensor
+  if (!bme.begin(BME280_ADDRESS)) {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    while (1);
+  }
+
+  // Initialize Distance Sensor
+  pinMode(DISTANCE_SENSOR_PIN, INPUT);
+
+  // Initialize Servo Motor
+  servoMotor.attach(SERVO_PIN);
+
+  // Initialize Passive Buzzer
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  // Initialize OLED Display
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // Address 0x3C for 128x64
+
+  // Initialize RGB LED
+  pinMode(RGB_LED_PIN_RED, OUTPUT);
+  pinMode(RGB_LED_PIN_GREEN, OUTPUT);
+  pinMode(RGB_LED_PIN_BLUE, OUTPUT);
+
+  // Initialize RGB Color Sensor
+  if (!tcs.begin()) {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (1); // Halt
+  }
+}
+
+void loop() {
+  // Parcel Detection and Sorting Activation
+  motion_detection_sorting(digitalRead(PIR_SENSOR_PIN));
+  delay(500); // 1-second delay
+
+  // Environmental Monitoring
+  temperature_humidity_control(bme);
+  delay(500); // 1-second delay
+
+  // Safety Measures
+  distance_measurement_warning(analogRead(DISTANCE_SENSOR_PIN));
+  delay(500); // 1-second delay
+
+  // Color Detection and Feedback
+  color_detection_feedback();
+  delay(500); // 1-second delay
+}
+
+// Function 1: Parcel Detection and Sorting Activation
+void motion_detection_sorting(bool pirInput) {
+  if (pirInput == HIGH) {
+    activate_servo_motor();
+  }
+}
+
+void activate_servo_motor() {
+  servoMotor.write(90); // Example angle for sorting
+}
+
+// Function 2: Environmental Monitoring
+void temperature_humidity_control(Adafruit_BME280 bmeSensor) {
+  float temperature = bmeSensor.readTemperature();
+  float humidity = bmeSensor.readHumidity();
+  display_temperature_humidity(temperature, humidity);
+}
+
+void display_temperature_humidity(float temp, float hum) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0,0);
+  display.print("Temp: ");
+  display.println(temp);
+  display.print("Humidity: ");
+  display.println(hum);
+  display.display();
+}
+
+// Function 3: Safety Measures
+void distance_measurement_warning(int distanceInput) {
+  // Convert the analog value to a distance in cm
+  float voltage = distanceInput * (5.0 / 1023.0);
+  float distance = (voltage / 5.0) * 100; // Example conversion, adjust based on your sensor's datasheet
+  
+  // Print distance to Serial Monitor
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+  
+  if (distance < 20) {
+    activate_passive_buzzer();
+  } else {
+    deactivate_passive_buzzer();
+  }
+}
+
+void activate_passive_buzzer() {
+  tone(BUZZER_PIN, 1000); // Example frequency for warning
+}
+
+void deactivate_passive_buzzer() {
+  noTone(BUZZER_PIN);
+}
+
+// Function 4: Color Detection and Feedback
+void color_detection_feedback() {
+  uint16_t clear, red, green, blue;
+  tcs.getRawData(&red, &green, &blue, &clear);
+  String color = determine_color(red, green, blue);
+  provide_color_feedback(color);
+}
+
+String determine_color(uint16_t red, uint16_t green, uint16_t blue) {
+  if (red > green && red > blue) {
+    return "Red";
+  } else if (green > red && green > blue) {
+    return "Green";
+  } else if (blue > red && blue > green) {
+    return "Blue";
+  } else {
+    return "Unknown";
+  }
+}
+
+void provide_color_feedback(String color) {
+  if (color == "Red") {
+    digitalWrite(RGB_LED_PIN_RED, HIGH);
+    digitalWrite(RGB_LED_PIN_GREEN, LOW);
+    digitalWrite(RGB_LED_PIN_BLUE, LOW);
+  } else if (color == "Green") {
+    digitalWrite(RGB_LED_PIN_RED, LOW);
+    digitalWrite(RGB_LED_PIN_GREEN, HIGH);
+    digitalWrite(RGB_LED_PIN_BLUE, LOW);
+  } else if (color == "Blue") {
+    digitalWrite(RGB_LED_PIN_RED, LOW);
+    digitalWrite(RGB_LED_PIN_GREEN, LOW);
+    digitalWrite(RGB_LED_PIN_BLUE, HIGH);
+  } else {
+    digitalWrite(RGB_LED_PIN_RED, LOW);
+    digitalWrite(RGB_LED_PIN_GREEN, LOW);
+    digitalWrite(RGB_LED_PIN_BLUE, LOW);
+  }
+}
